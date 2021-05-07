@@ -61,7 +61,10 @@ def start_server(clientfd):
         query=clientfd.recv(5000).decode()
         #print(app_name)
         tokens=query.split("*")
-        if tokens[0] == "app":
+        if tokens[0] =="MontoringRequest":
+            clientfd.sendall("done".encode())
+
+        elif tokens[0] == "app":
             if tokens[1]== "admin":
                 print(1)
 
