@@ -9,9 +9,10 @@ import shutil
 import socket
 import ast
 import zipfile
+import requests
 
-
-port=5012
+ipPort_SensorManager = "127.0.0.1:6767"
+port=5018
 ip="127.0.0.1"
 
 
@@ -115,11 +116,11 @@ def user_error1():
 #------------------------------------------------------index---------------------------------------------------------
 @app.route('/',methods = ['POST', 'GET'])
 def index():
-   print("fhjmfgjm")
+   #print("fhjmfgjm")
    if request.method == 'POST':
-      print("dthjrfjsfjrtf")
+      #print("dthjrfjsfjrtf")
       if request.form.get("login_button"):
-         print("drftjuerjt")
+         #print("drftjuerjt")
          return render_template('login.html')
       if request.form.get("register_button"):
          return render_template('register.html')
@@ -200,7 +201,7 @@ def register():
       user = request.form['uid']
       pswd = request.form['pswd']
       types = request.form['user_type']
-      print(user,pswd,types)
+      #print(user,pswd,types)
       if types == "Application Admin":
          print(1)
          mp={user:pswd}
@@ -251,7 +252,7 @@ def register():
 
 
 #-----------------------------------------------------------/admin---------------------------------------------------------------
-app.config['Files_upload']="/home/somyalalwani9/Documents/after_eval2_final/Files_upload"
+app.config['Files_upload']="./Files_upload"
 
 @app.route('/admin',methods=['POST','GET'])
 def admin():
@@ -260,16 +261,17 @@ def admin():
       if request.form['admin_option'] == "Install The Sensor Class (Sensor Catalogue)":
          #print("1")
          t=request.files['myfile']
-         print(t)
+         #print(t)
          #return redirect(request.url)
          fname=request.files['myfile'].filename
-         print(fname)
+         #print(fname)
          t.save(os.path.join(app.config["Files_upload"],t.filename))
          #res=t.read()
          path=app.config['Files_upload']+"/"+fname
-         print(path)
-         f=open(path)
-         data=json.load(f)
+         #print(path)
+         with open(path,"r") as f:
+            data=json.load(f)
+         f.close()
          print(data,type (data))
 
          # string me convert krke bhej do socket programming ke through
@@ -286,8 +288,11 @@ def admin():
          s+=str(data)
          clientfd.sendall(s.encode())
          res=clientfd.recv(50000).decode()
+         #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+         #print(res,type(res))
          res=res.replace("'",'"')
          res=json.loads(res) #dict
+         #print(res,type(res))
          print(res["msg"])
          m=res["msg"]
          flash(m,"error")
@@ -308,8 +313,9 @@ def admin():
          #res=t.read()
          path=app.config['Files_upload']+"/"+fname
          print(path)
-         f=open(path)
-         data=json.load(f)
+         with open(path,"r") as f:
+            data=json.load(f)
+         f.close()
          print(data,type (data))
 
          # string me convert krke bhej do socket programming ke through
@@ -356,17 +362,21 @@ def admin():
       elif request.form['admin_option'] == "Install The Barricades":
          #print("4")
          t=request.files['myfile']
-         print(t)
+         #print(t)
          #return redirect(request.url)
          fname=request.files['myfile'].filename
-         print(fname)
+         #print(fname)
          t.save(os.path.join(app.config["Files_upload"],t.filename))
          #res=t.read()
          path=app.config['Files_upload']+"/"+fname
-         print(path)
-         f=open(path)
-         data=json.load(f)
-         print(data,type (data))
+         #print(path)
+         with open(path,"r") as f:
+            data=json.load(f)
+         f.close()
+         
+         #f=open(path)
+         #data=json.load(f)
+         #print(data,type (data))
 
          # string me convert krke bhej do socket programming ke through
          #------------------------socket programming---------------------------------
@@ -389,20 +399,20 @@ def admin():
 
 
       elif request.form['admin_option'] == "Upload The Application":
-         print("3")
+         #print("3")
          t=request.files['myfile']
-         print(t)
+         #print(t)
          #return redirect(request.url)
          fname=request.files['myfile'].filename
-         print(fname)
+         #print(fname)
          t.save(os.path.join(app.config["Files_upload"],t.filename))
          t=fname.split(".")
          #path=app.config['Files_upload']+"/"+t[0]
          path=app.config['Files_upload']
          fpath=app.config['Files_upload']+"/"+fname
-         print(fpath)
-         print("************")
-         print(path)
+         #print(fpath)
+         #print("************")
+         #print(path)
          path_to_zip_file=fpath
          with zipfile.ZipFile(path_to_zip_file, 'r') as zip_ref:
             zip_ref.extractall(path)
@@ -418,13 +428,19 @@ def admin():
                
          config_path1=curr_loc +"/application3.py"
          config_path2=curr_loc +"/application124.py"
-         fd1=open(config_path1)
-         fd2=open(config_path2)
+         fd1=""
+         with open(config_path1,"r") as f:
+            fd1+=f.read()
+         f.close()
+         fd2=""
+         with open(config_path2,"r") as f:
+            fd2+=f.read()
+         f.close()
          #print(fd1)
          #print(fd2)
 
          #------------------------socket programming---------------------------------
-
+         s=""
          clientfd=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
          clientfd.connect((ip,port))
          s="app"
@@ -488,76 +504,53 @@ def user():
          return render_template('user.html')
       else:
          #print(23)
-         print("11")
+         #print("11")
          
          selected_app=request.form["appname"]
          session['selected_app']=selected_app
 
          #lst=sm.bus_list()
-         lst=["b1","b2","b3"]
+         #lst=["Bus1","Bus2","Bus3"]
+         
+         ipPort_SensorManager = "127.0.0.1:6767"
+         url="http://"+ipPort_SensorManager+"/getAllBusInstances"
+         
+         lst = requests.get(url)
+         lst=ast.literal_eval(lst.text)
+         
          if selected_app not in lst:
             flash("There is no such bus")
             return redirect(url_for('user_error1'))
 
          path2=app.config['Files_upload']+"/"+"application124.py"
-         data1=open(path2)
-         print(data1,type (data1))
-
+         data1=""
+         with open(path2,"r") as f:
+            data1+=f.read()
+         f.close()
+         #data1=open(path2)
+         
 
          t2=request.files['myfile2']
-         print(t2)
+         #print(t2)
          #return redirect(request.url)
          fname2=request.files['myfile2'].filename
-         print(fname2)
+         #print(fname2)
          t2.save(os.path.join(app.config["Files_upload"],t2.filename))
          #res=t.read()
          path2=app.config['Files_upload']+"/"+fname2
-         print(path2)
-         f2=open(path2)
-         data2=json.load(f2)
-         print(data2,type (data2))
+         # print(path2)
+         with open(path2,"r") as f2:
+            data2=json.load(f2)
+         f2.close()
          
-
+         #f2=open(path2)
          """
-         selected_app=request.form["appname"]
+         f2=""
+         with open(path2,"r") as f:
+            f2+=f.read()
+         """
+         #data2=json.load(f2)
          
-         print(selected_app)
-
-         lst=[]
-         """
-         """
-         x=deploy_info.find()
-         for data in x:
-            lst.append(data["_id"])
-         """
-         """
-         
-         t1=request.files['myfile1']
-         print(t1)
-         #return redirect(request.url)
-         fname1=request.files['myfile1'].filename
-         print(fname1)
-         t1.save(os.path.join(app.config["Files_upload"],t1.filename))
-         #res=t.read()
-         path1=app.config['Files_upload']+"/"+fname1
-         print(path1)
-         f1=open(path1)
-         data1=json.load(f1)
-         print(data1,type (data1))
-
-         t2=request.files['myfile2']
-         print(t2)
-         #return redirect(request.url)
-         fname2=request.files['myfile2'].filename
-         print(fname2)
-         t2.save(os.path.join(app.config["Files_upload"],t2.filename))
-         #res=t.read()
-         path2=app.config['Files_upload']+"/"+fname2
-         print(path2)
-         f2=open(path2)
-         data2=json.load(f2)
-         print(data2,type (data2))
-         """
          #------------------------socket programming---------------------------------
 
          clientfd=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -566,13 +559,37 @@ def user():
          s+="*"
          s+="user"
          s+="*"
-         s+=str(data1) #application124
-         s+="*"
-         s+=str(data2) #sensor_info
+         s+="start"
          s+="*"
          s+=selected_app
          
          clientfd.sendall(s.encode())
+        
+
+         #s=str(data1) #application124
+
+         #print("********data1-app124*****************")
+         #print(data1,type (data1))
+         i=0
+         while(i<len(data1) and i+2000<len(data1)):
+            print("Sending data1")
+            clientfd.sendall(data1[i:i+2000].encode())
+            i=i+2000
+
+         if (i<len(data1)):
+            print("Sending data1")
+            clientfd.sendall(data1[i:].encode())
+
+         clientfd.sendall("done".encode())
+         res=clientfd.recv(50000).decode()         
+         s=json.dumps(data2) #sensor_info
+         
+         #print("*************info.json ka data****************")
+         #print(s,type (s))
+         
+         clientfd.sendall(s.encode())
+         
+
          res=clientfd.recv(50000).decode()
          #final response recvd
          flash(res,"error")
@@ -601,8 +618,8 @@ def user_stop():
       if request.method == 'GET':
          return render_template('user.html')
       else:
-         #print(23)
-         print("22")
+         
+         #print("22")
          selected_app=session['selected_app']
          print("***")
          print(selected_app)

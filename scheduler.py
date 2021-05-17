@@ -7,7 +7,8 @@ import ast
 import subprocess
 import json
 import datetime as dt
-
+import threading
+import os.path
 #-----------------------------------------------------------------------------------------------#
 
 task = []  
@@ -18,14 +19,13 @@ task = []
 "endtime": "24:00 hours format",
 "recurring_bit" : 0/1,
 "recurring_interval" : seconds in INT, 
-"appname" : "string",
-"sid" : "[list of sensor ids]"
+"busname" : "string/buzzer/STOP:Busname",
 }
 '''
 
 # IP PORT for Interacting with PLATFORM MANAGER
 IP = "127.0.0.1"
-PORT = 8081
+PORT = 8082
 
 #-----------------------------------------------------------------------------------------------#
 
@@ -49,15 +49,22 @@ def process_time(st):
 #-----------------------------------------------------------------------------------------------#
 
 def generate_algo_file(Client, appname):
-    content = Client.recv(65535*1024)
-    if len(content)<=0:
+    dt=""
+    content = Client.recv(1024).decode()
+    dt+=content
+    while(len(content)>0):
+        content=Client.recv(1024).decode()
+        dt+=content
+
+    if len(dt)<=0:
         print("Empty file received!\n")
         return
     
     fileName = appname
     #print("STATUS : " + fileName + " received\n")
-    with open(fileName, "wb") as f:
-        data = f.write(content)
+    with open(fileName, "w") as f:
+        f.writelines(dt)
+
 
     resp = "RECEIVED"
     Client.sendall(resp.encode())
@@ -67,21 +74,32 @@ def generate_algo_file(Client, appname):
 def push_task(data):
     stime = data['starttime']
     etime = data['endtime']
-
-    start_time = process_time(stime)
-    end_time = process_time(etime)
-
-    data['starttime'] = start_time
-    data['endtime'] = end_time
+    print(etime,stime)
+    if data['appname']!='buzzer.py':
+        start_time = process_time(stime)
+        end_time = process_time(etime)
+        data['starttime'] = start_time
+        data['endtime'] = end_time
+    else:
+        data['starttime'] = float(stime)
+        data['endtime'] = float(etime)
 
     datalist = []
+    if data["appname"]=="buzzer.py":
+        datalist.append(data['starttime'])
+        datalist.append(data['endtime'])
+        datalist.append(data['recurring_bit'])
+        datalist.append(data['recurring_interval'])
+        datalist.append(data['appname'])
+        datalist.append("-1")
+    else:
+        datalist.append(data['starttime'])
+        datalist.append(data['endtime'])
+        datalist.append(data['recurring_bit'])
+        datalist.append(data['recurring_interval'])
+        datalist.append(data['appname'])
+        datalist.append(data['busname'])
 
-    datalist.append(data['starttime'])
-    datalist.append(data['endtime'])
-    datalist.append(data['recurring_bit'])
-    datalist.append(data['recurring_interval'])
-    datalist.append(data['appname'])
-    datalist.append(ast.literal_eval(data['sid']))
 
     task.append(datalist)
 
@@ -90,39 +108,55 @@ def push_task(data):
 # Function for Receiving Task from PLATFORM MANAGER
 
 def get_data(Client):
+    print("In get data")
     global task
     req = Client.recv(2048).decode()
-    # print(req, type(req))
-    # req=req.replace("'",'"')
-    
-    # print(req, type(req))
-    # req=json.dumps(req)
-    # req="'"+req+"'"
-    # data = json.loads(req)
-    # #data=ast.literal_eval(req)
-    # print(data, type(data))
     lst=req.split("*")
+    print(len(lst),lst)
     data={}
-    data["starttime"]=lst[0]
-    data["endtime"]=lst[1]
-    data["recurring_bit"]=lst[2]
-    data["recurring_interval"]=lst[3]
-    data["appname"]=lst[4]+".py"
-    data["sid"]=lst[5]
-    sid = ast.literal_eval(data['sid'])
+    if lst[4][:4]=="STOP":
+        req,busname=lst[4].split(":")
+        with open("stop/"+busname+".txt","w") as f:
+            f.write("")
+            f.write("True")
+        #f.close()
+        return
+    elif lst[4]=="buzzer":
+        #print("Hi Buzzer, How are you buddy?")
+        tm = time.time()
+        data["starttime"] = str(tm)
+        data["endtime"] = str(tm+30)
+        #print(data["starttime"],data["endtime"])
+        data["recurring_bit"] = 1
+        data["recurring_interval"] = 120
+        data["appname"] = "buzzer.py"
 
+    else:
+        data["starttime"]=lst[0]
+        data["endtime"]=lst[1]
+        data["recurring_bit"]=lst[2]
+        data["recurring_interval"]=lst[3]
+        data["appname"]="bus.py"
+        data["busname"]=lst[4]
+    #data["sid"]=lst[5]
+    #sid = ast.literal_eval(data['sid'])
+
+    #-----> CHANGES FOR SOMYA
+
+    '''
     for s in sid:
         if s == "False":
             resp = "Failed"
             Client.sendall(resp.encode())
             return
+    '''
 
     #task.append(data)
     push_task(data)
     resp = "RECEIVED"
     Client.sendall(resp.encode())
     #temp=data["appname"]+".py"
-    generate_algo_file(Client, data["appname"])
+    #generate_algo_file(Client, data["appname"])
 
 #-----------------------------------------------------------------------------------------------#
 
@@ -144,13 +178,14 @@ def importName(modulename, name):
 
 def server_manager():
     IP = "127.0.0.1"
-    PORT = 2121    #@@@@@@
+    PORT = 8050    #@@@@@@
     sockfd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sockfd.connect((IP, PORT))
-    sockfd.send("get_server_instance".encode())  
+    sockfd.send("giveMePort".encode())  
     resp = sockfd.recv(1024).decode()
     sockfd.close()
-    IP, PORT = resp.split(":")
+    PORT = resp
+    IP="127.0.0.1"
     print("#-> INSTANCE ALLOCATED")
     return IP, int(PORT)
 
@@ -171,29 +206,30 @@ def free_server_instance(host, port):
 
 # Function for opening TERMINAL UI for ENDUSER
 
-def open_terminal_UI(appname, endtime, starttime):
-    print(starttime)
-    print(endtime)
-    #os.system("gnome-terminal -x python _" + appname + " " + str(float(endtime) - float(starttime)))
-    os.system("gnome-terminal -x python3 " + "tesp.py" + " " + str(float(endtime) - float(starttime)))
+def open_terminal_UI(appname, endtime, starttime, busname, HOST, PORT):
+    #os.system(appname + " " + str(float(endtime) - float(starttime)))
+    os.system("gnome-terminal -x python3 " + appname +" "+busname+" "+HOST+" "+str(PORT)+" "+str(float(endtime) - float(starttime)))
+    #os.system(appname +" "+busname+" "+HOST+" "+str(PORT)+" "+str(float(endtime) - float(starttime)))
 
 
 #-----------------------------------------------------------------------------------------------#
 
 # Function to run the scheduled process (Will create copy of app.py -> replace IP,PORT,SID -> Call open_terminal_UI -> Call free instance)
 
-def connect(starttime, endtime, appname, sids):
+def connect(starttime, endtime, appname, busname):
     #print("CONNECT KE ANDAR\n\n")
     HOST, PORT = server_manager()
 
-    HOST = '127.0.0.1'   #@@@@@
-    PORT = 5000          #@@@@@  
+    #HOST = '127.0.0.1'   #@@@@@
+    #PORT = 5000          #@@@@@  
+
+    print("***********"+HOST," ",PORT," Scheduled instance"+"***********")
 
     #----> app.py ki nayi copy (myApp.py)
     #----> myApp.py IP PORT replace HOST PORT
     #----> how to send endtime to myApp.py
-
-    s = ""
+    '''
+    s = ""  
     if len(sids)>1:
         for item in sids:
             s += str (item) + "/"
@@ -202,35 +238,41 @@ def connect(starttime, endtime, appname, sids):
         s = sids
 
     #print(appname + "connect ke andar aagya he")
-    fin = open(appname, "rt")
-    fout = open("_" + appname, "wt")
+    #fin = open(appname, "rt")
+    #fout = open("_" + appname, "wt")
     
     for line in fin:
         fout.write(line.replace('IP', HOST).replace('PORT', str(PORT)).replace("sensorID1", s))
     fin.close()
     fout.close()
+    '''
+    # tempHost = '127.0.0.1'
+    # tempPort = 5656
 
-    tempHost = '127.0.0.1'
-    tempPort = 5656
+    # sockfd = socket.socket()
+    # sockfd.bind((tempHost, tempPort))
 
-    sockfd = socket.socket()
-    sockfd.bind((tempHost, tempPort))
+    # #print('\nListening for Server Response...')
+    # sockfd.listen(10)
+    #bus1=th.start
+    if busname=='-1':
+        start_new_thread(open_terminal_UI, (appname, endtime, starttime, busname, HOST, PORT))
+    else:
+        f=open("stop/"+busname+".txt","w")
+        f.write("")
+        f.write("False")
+        f.close()
+        start_new_thread(open_terminal_UI, (appname, endtime, starttime, busname, HOST, PORT))
+    # while time.time() <= float(endtime):
+    #     print("--------- NOMPS ========")
+    #     Client, address = sockfd.accept()
+    #     resp = Client.recv(2048).decode()
+    #     if resp=="4":
+    #         break
 
-    #print('\nListening for Server Response...')
-    sockfd.listen(10)
-
-    start_new_thread(open_terminal_UI, (appname, endtime, starttime))
-
-    while time.time() <= float(endtime):
-        print("--------- NOMPS ========")
-        Client, address = sockfd.accept()
-        resp = Client.recv(2048).decode()
-        if resp=="4":
-            break
-
-    sockfd.close()
-    print("SOCKET CLOSED\n")
-    free_server_instance(HOST, PORT)
+    # sockfd.close()
+    # print("SOCKET CLOSED\n")
+    #free_server_instance(HOST, PORT)
 
 #-----------------------------------------------------------------------------------------------#
 
@@ -246,24 +288,26 @@ def schedule():
         while len(task)!=0 and st >= float(task[0][0]):
             l = task[0]
             #print("WHILE KE ANDAR\n\n")
-
-            if l[2]==1:
+            #print("This is ur ass:"+l[2]+" "+l[3])
+            #print(type(l[2]))
+            if int(l[2])==1:
                 #print("RECUR KE ANDAR\n\n")
-
+                
                 temp = task[0]
-                if l[3]==-1:
+                if int(l[3])==-1:
                     temp[0] = temp[0] + 86400
                     temp[1] = temp[1] + 86400
                 else:
-                    temp[0] = temp[0] + l[3]
-                    temp[1] = temp[1] + l[3]
+                    #print("Hiiiiiii")
+                    temp[0] = temp[0] + int(l[3])
+                    temp[1] = temp[1] + int(l[3])
                     print(temp[0])
                     print(temp[1])
                     print("-----------------")
                 task.append(temp)
 
             task=task[1:]
-            start_new_thread(connect, (l[0],l[1],l[4],l[5]))
+            start_new_thread(connect, (l[0],l[1],l[4],l[5]))   ###call by threading library method
 
 #-----------------------------------------------------------------------------------------------#
 
@@ -290,6 +334,11 @@ def process_request():
 # ME TO MAIN HUN
 
 def main():
+    if os.path.isfile("schedule.log"):
+        f=open("schedule.log","r")
+        x=f.readline()
+        f.close()
+
     start_new_thread(process_request, ())
     while(True):
         schedule()
